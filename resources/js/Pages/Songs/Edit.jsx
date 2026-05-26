@@ -164,10 +164,10 @@ export default function Edit({ song, audioTracks: initialAudioTracks, drumTrack 
     // リロード時はサーバーキャッシュを取得するだけで済む。
     const prep = useExportPrep(song.id, mixParams, { lyrics });
 
-    // 新しい準備が始まったらオーバーレイの非表示状態をリセット（次回は再表示）。
+    // 新しい準備（音声・動画）が始まったらオーバーレイの非表示状態をリセット（次回は再表示）。
     useEffect(() => {
-        if (prep.status === 'preparing') setPrepOverlayHidden(false);
-    }, [prep.status]);
+        if (prep.status === 'preparing' || prep.videoStatus === 'preparing') setPrepOverlayHidden(false);
+    }, [prep.status, prep.videoStatus]);
 
     // 曲全体をミックスして音楽ファイル（WAV/MP3）として書き出す。
     const handleExport = async (format, onStage) => {
@@ -207,8 +207,8 @@ export default function Edit({ song, audioTracks: initialAudioTracks, drumTrack 
         <div className="min-h-screen bg-zinc-950 text-zinc-100">
             <Head title={meta.title} />
 
-            {/* バックグラウンドのミックス準備中は全画面ローディング表示。Xで閉じて作業を続けられる。 */}
-            {prep.status === 'preparing' && !prepOverlayHidden && (
+            {/* バックグラウンドの準備中（音声ミックス/動画）は全画面ローディング表示。Xで閉じて作業を続けられる。 */}
+            {(prep.status === 'preparing' || prep.videoStatus === 'preparing') && !prepOverlayHidden && (
                 <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 backdrop-blur-sm">
                     <div className="relative flex flex-col items-center gap-3 rounded-xl border border-zinc-700 bg-zinc-900 px-8 py-6 shadow-2xl">
                         <button
@@ -219,8 +219,17 @@ export default function Edit({ song, audioTracks: initialAudioTracks, drumTrack 
                             ✕
                         </button>
                         <div className="h-9 w-9 animate-spin rounded-full border-4 border-zinc-600 border-t-blue-500" />
-                        <div className="text-sm font-semibold text-zinc-100">書き出しデータを準備中…</div>
-                        <div className="text-xs text-zinc-500">ミックスをレンダリングしています</div>
+                        {prep.status === 'preparing' ? (
+                            <>
+                                <div className="text-sm font-semibold text-zinc-100">書き出しデータを準備中…</div>
+                                <div className="text-xs text-zinc-500">ミックスをレンダリングしています</div>
+                            </>
+                        ) : (
+                            <>
+                                <div className="text-sm font-semibold text-zinc-100">動画を準備中…</div>
+                                <div className="text-xs text-zinc-500">動画をエンコードしています</div>
+                            </>
+                        )}
                         <div className="text-[11px] text-zinc-600">✕ で閉じても準備は続きます</div>
                     </div>
                 </div>
