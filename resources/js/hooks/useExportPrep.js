@@ -32,7 +32,7 @@ async function fetchDecode(url) {
 //  - videoStatus: 動画準備の状態（同上）
 //  - getBuffer(): 現在の署名に対応する AudioBuffer（必要なら遅延デコード）。無ければ null。
 //  - getVideo(): 現在の署名に対応するキャッシュ動画 { url, format }。無ければ null。
-export function useExportPrep(songId, params, { lyrics = {}, debounceMs = 2500, videoDebounceMs = 1500 } = {}) {
+export function useExportPrep(songId, params, { lyrics = {}, debounceMs = 8000, videoDebounceMs = 4000 } = {}) {
     const lyricsSig = useMemo(() => JSON.stringify(lyrics ?? {}), [lyrics]);
     const lyricsRef = useRef(lyrics);
     lyricsRef.current = lyrics;
