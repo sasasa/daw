@@ -7,35 +7,91 @@ import { nearestSection, sectionRanges } from '../../lib/sections';
 import { INSTRUMENTS, instrumentToTab, isVocal } from '../../constants/instruments';
 
 // 1 本の録音トラック行。名前編集・単体再生・波形・タブ譜/歌詞入力・削除を担う。
-export default function AudioTrack({ track, onChanged, playSec = null, playing = false, paused = false, onSeek, pattern = [], sections = [], bpm = 120, chords = {}, onChordsChange, lyrics = {}, onLyricsChange }) {
+export default function AudioTrack({ track, onChanged, playSec = null, playing = false, paused = false, onSeek, pattern = [], sections = [], bpm = 120, chords = {}, onChordsChange, lyrics = {}, onLyricsChange, innerRef }) {
     const [name, setName] = useState(track.name);
     const vocal = isVocal(name);
-    const [previewing, setPreviewing] = useState(false);
+    const [previewing, setPreviewing] = useState(false); // 単体プレビュー再生中
+    const [previewPaused, setPreviewPaused] = useState(false); // 単体プレビューを一時停止中
     const [previewSec, setPreviewSec] = useState(0); // 単体プレビューの再生位置(秒)
     const [showTab, setShowTab] = useState(!!track.notation);
-    const audioRef = useRef(null);
+
+    // 単体プレビューは Web Audio で再生する（録音の WebM は <audio> のシークが効かないため、
+    // デコード済みバッファをオフセット指定で再生して一時停止・シークを正確に行う）。
+    const ctxRef = useRef(null);
+    const bufRef = useRef(null);
+    const srcRef = useRef(null);
+    const startedAtRef = useRef(0); // 再生開始時の AudioContext 時刻
+    const startOffsetRef = useRef(0); // 再生開始時のバッファ内オフセット
     const rafRef = useRef(null);
 
     useEffect(() => setName(track.name), [track.name]);
 
-    // 単体プレビュー中は <audio> の再生位置を追従して再生線を動かす。
-    useEffect(() => {
-        if (!previewing) {
-            if (rafRef.current) cancelAnimationFrame(rafRef.current);
-            rafRef.current = null;
-            return;
+    const getCtx = () => {
+        if (!ctxRef.current) ctxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+        return ctxRef.current;
+    };
+    const ensureBuffer = async () => {
+        if (bufRef.current) return bufRef.current;
+        const res = await fetch(track.url);
+        const ab = await res.arrayBuffer();
+        bufRef.current = await getCtx().decodeAudioData(ab);
+        return bufRef.current;
+    };
+    const stopSource = () => {
+        if (srcRef.current) {
+            try {
+                srcRef.current.onended = null;
+                srcRef.current.stop();
+            } catch (_) { /* 既に停止 */ }
+            srcRef.current = null;
         }
+        if (rafRef.current) {
+            cancelAnimationFrame(rafRef.current);
+            rafRef.current = null;
+        }
+    };
+    // offset(秒)から再生開始。
+    const startAt = async (offset) => {
+        const ctx = getCtx();
+        await ctx.resume?.();
+        const buf = await ensureBuffer();
+        stopSource();
+        const off = Math.min(Math.max(0, offset), Math.max(0, buf.duration - 0.02));
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        src.connect(ctx.destination);
+        src.onended = () => {
+            if (srcRef.current === src) {
+                // 自然に最後まで再生し終えた
+                stopSource();
+                setPreviewing(false);
+                setPreviewPaused(false);
+                setPreviewSec(0);
+            }
+        };
+        src.start(0, off);
+        srcRef.current = src;
+        startedAtRef.current = ctx.currentTime;
+        startOffsetRef.current = off;
+        setPreviewing(true);
+        setPreviewPaused(false);
         const tick = () => {
-            const el = audioRef.current;
-            if (el) setPreviewSec(el.currentTime);
+            const c = ctxRef.current;
+            if (!c) return;
+            setPreviewSec(startOffsetRef.current + (c.currentTime - startedAtRef.current));
             rafRef.current = requestAnimationFrame(tick);
         };
         rafRef.current = requestAnimationFrame(tick);
+    };
+
+    // アンマウント時に後始末。
+    useEffect(() => {
         return () => {
-            if (rafRef.current) cancelAnimationFrame(rafRef.current);
-            rafRef.current = null;
+            stopSource();
+            ctxRef.current?.close?.();
+            ctxRef.current = null;
         };
-    }, [previewing]);
+    }, []);
 
     const saveName = async (value) => {
         const trimmed = (value ?? name).trim();
@@ -63,25 +119,49 @@ export default function AudioTrack({ track, onChanged, playSec = null, playing =
         onChanged?.();
     };
 
-    // このトラック単体の試聴。再生中に押すと一時停止（位置は保持）、もう一度で続きから。
-    const togglePlay = () => {
-        const el = audioRef.current;
-        if (!el) return;
-        if (previewing) el.pause();
-        else el.play().catch(() => {});
-    };
-
     const durSec = (track.duration_ms || 0) / 1000 || 1;
     const offSec = (track.offset_ms || 0) / 1000;
 
-    // 一時停止中、波形上をドラッグして全体の再生位置をずらす（このトラックの担当範囲内）。
+    // このトラック単体の試聴。再生中に押すと一時停止（位置は保持）、もう一度で続きから。
+    const togglePlay = () => {
+        if (previewing) {
+            const c = ctxRef.current;
+            const pos = c ? startOffsetRef.current + (c.currentTime - startedAtRef.current) : previewSec;
+            stopSource();
+            setPreviewing(false);
+            setPreviewPaused(true);
+            setPreviewSec(Math.max(0, pos));
+        } else {
+            startAt(previewPaused ? previewSec : 0).catch((e) => console.error('preview play failed', e));
+        }
+    };
+
+    // プレビューの再生位置を移動。再生中はその位置から鳴らし直し、一時停止中は位置だけ保持。
+    const seekPreview = (t) => {
+        const clamped = Math.max(0, Math.min(durSec, t));
+        setPreviewSec(clamped);
+        if (previewing) {
+            startAt(clamped).catch(() => {});
+        } else {
+            setPreviewPaused(true);
+            startOffsetRef.current = clamped;
+        }
+    };
+
+    // 一時停止中、波形上をドラッグして再生位置をずらす。
+    // 単体プレビュー一時停止中はこのトラックの位置を、全体一時停止中は曲全体の位置を動かす。
+    const canSeek = previewPaused || (paused && !!onSeek);
     const seekFromEvent = (clientX, rectEl) => {
         const rect = rectEl.getBoundingClientRect();
         const frac = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
-        onSeek?.(offSec + frac * durSec);
+        if (previewPaused) {
+            seekPreview(frac * durSec);
+        } else if (paused && onSeek) {
+            onSeek(offSec + frac * durSec);
+        }
     };
     const onWaveMouseDown = (e) => {
-        if (!paused || !onSeek) return;
+        if (!canSeek) return;
         const rectEl = e.currentTarget;
         seekFromEvent(e.clientX, rectEl);
         const onMove = (ev) => seekFromEvent(ev.clientX, rectEl);
@@ -100,19 +180,18 @@ export default function AudioTrack({ track, onChanged, playSec = null, playing =
         ? pattern.filter((m) => m.measure >= range.start && m.measure <= range.end)
         : pattern;
 
-    // 再生線の位置(%)。単体プレビュー中はそのトラックの再生位置、
-    // 全体再生/一時停止中は曲全体の再生位置から算出する。
+    // 再生線の位置(%)。全体再生/一時停止が優先、無ければ単体プレビュー（再生中・一時停止中とも表示）。
     let playheadPct = null;
-    if (previewing) {
-        playheadPct = Math.min(100, Math.max(0, (previewSec / durSec) * 100));
-    } else {
-        const rel = (playing || paused) && playSec != null ? playSec - offSec : null;
+    if (playing || paused) {
+        const rel = playSec != null ? playSec - offSec : null;
         const relSec = rel != null && rel >= 0 && rel <= durSec ? rel : null;
         playheadPct = relSec != null ? (relSec / durSec) * 100 : null;
+    } else if (previewing || previewPaused) {
+        playheadPct = Math.min(100, Math.max(0, (previewSec / durSec) * 100));
     }
 
     return (
-        <div className="border-b border-zinc-800 px-3 py-2">
+        <div ref={innerRef} className="border-b border-zinc-800 px-3 py-2">
             <div className="flex items-center gap-3">
                 <div className="w-28 shrink-0">
                     <select
@@ -146,9 +225,9 @@ export default function AudioTrack({ track, onChanged, playSec = null, playing =
 
                 <div className="min-w-0 flex-1">
                     <div
-                        className={`relative ${paused && onSeek ? 'cursor-ew-resize' : ''}`}
+                        className={`relative ${canSeek ? 'cursor-ew-resize' : ''}`}
                         onMouseDown={onWaveMouseDown}
-                        title={paused ? 'ドラッグで再生位置を移動' : undefined}
+                        title={canSeek ? 'ドラッグで再生位置を移動' : undefined}
                     >
                         <Waveform url={track.url} />
                         {playheadPct != null && (
@@ -156,7 +235,7 @@ export default function AudioTrack({ track, onChanged, playSec = null, playing =
                                 className="pointer-events-none absolute top-0 h-full w-0.5 bg-amber-400"
                                 style={{ left: `${playheadPct}%` }}
                             >
-                                {paused && (
+                                {canSeek && (
                                     <div className="absolute -left-1 -top-1 h-2.5 w-2.5 rounded-full bg-amber-400" />
                                 )}
                             </div>
@@ -188,15 +267,6 @@ export default function AudioTrack({ track, onChanged, playSec = null, playing =
                 >
                     🗑
                 </button>
-
-                <audio
-                    ref={audioRef}
-                    src={track.url}
-                    onPlay={() => setPreviewing(true)}
-                    onPause={() => setPreviewing(false)}
-                    onEnded={() => setPreviewing(false)}
-                    preload="none"
-                />
             </div>
         </div>
     );

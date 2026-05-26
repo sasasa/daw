@@ -31,6 +31,30 @@ export default function AudioTrackList({ song, audioTracks, bpm, pattern, sectio
     const [channelName, setChannelName] = useState(INSTRUMENTS[0]);
     const [startSectionId, setStartSectionId] = useState(''); // '' = 曲頭
     const setViewSectionId = (id) => onViewSectionChange?.(id); // 表示セクションは親と共有
+    const trackRefs = useRef({}); // 各トラック行の DOM 参照（波形追従用）
+    const lastCenteredRef = useRef(null); // 直近で中央表示したトラックID
+
+    // 追従=波形 のとき、再生位置をカバーするトラックが切り替わったら画面中央へスクロール。
+    useEffect(() => {
+        if (followTarget !== 'tab' || !(playing || paused) || playSec == null) {
+            lastCenteredRef.current = null;
+            return;
+        }
+        let active = null;
+        let activeOff = -1;
+        audioTracks.forEach((t) => {
+            const off = (t.offset_ms || 0) / 1000;
+            const dur = (t.duration_ms || 0) / 1000;
+            if (playSec >= off && playSec <= off + dur && off > activeOff) {
+                active = t;
+                activeOff = off;
+            }
+        });
+        if (active && active.id !== lastCenteredRef.current) {
+            lastCenteredRef.current = active.id;
+            trackRefs.current[active.id]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        }
+    }, [playSec, playing, paused, followTarget, audioTracks]);
     const [collapsed, setCollapsed] = useState(() => new Set()); // 折りたたみ中の楽器グループ
 
     const ranges = sectionRanges(sections);
@@ -275,6 +299,7 @@ export default function AudioTrackList({ song, audioTracks, bpm, pattern, sectio
                         <AudioTrack
                             key={track.id}
                             track={track}
+                            innerRef={(el) => (trackRefs.current[track.id] = el)}
                             onChanged={onAudioChanged}
                             playSec={playSec}
                             playing={playing}
@@ -310,6 +335,7 @@ export default function AudioTrackList({ song, audioTracks, bpm, pattern, sectio
                                     <AudioTrack
                                         key={track.id}
                                         track={track}
+                                        innerRef={(el) => (trackRefs.current[track.id] = el)}
                                         onChanged={onAudioChanged}
                                         playSec={playSec}
                                         playing={playing}

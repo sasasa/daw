@@ -36,14 +36,14 @@ export default function Print({ song, audioTracks, drumTrack }) {
     const lyrics = song.lyrics ?? {};
     const guitarCells = mergeCells(audioTracks, 'guitar');
     const bassCells = mergeCells(audioTracks, 'bass');
-    const PER_ROW = 4;
+    const PER_ROW = 6;
 
     // 小節を PER_ROW ごとの行に分割。
     const rows = [];
     for (let i = 0; i < pattern.length; i += PER_ROW) rows.push(pattern.slice(i, i + PER_ROW));
 
     return (
-        <div className="min-h-screen bg-white p-6 text-black">
+        <div className="min-h-screen bg-white p-4 text-black">
             <Head title={`${song.title} - 譜面`} />
 
             <div className="mb-4 flex items-center justify-between print:hidden">
@@ -58,29 +58,30 @@ export default function Print({ song, audioTracks, drumTrack }) {
                 </button>
             </div>
 
-            <h1 className="text-2xl font-bold">{song.title}</h1>
-            <div className="mb-4 text-sm text-zinc-600">
-                BPM {song.bpm} / {song.beats_per_measure}拍子
+            <h1 className="text-xl font-bold leading-tight">{song.title}</h1>
+            <div className="mb-2 text-xs text-zinc-600">
+                BPM {song.bpm} / {song.beats_per_measure}/{song.beat_unit ?? 4}拍子
             </div>
 
-            <div className="space-y-4">
+            {/* 全体を縮小して 1 枚により多く収める。 */}
+            <div className="space-y-2" style={{ zoom: 0.7 }}>
                 {rows.map((row, ri) => (
-                    <div key={ri} className="grid break-inside-avoid grid-cols-4 gap-2">
+                    <div key={ri} className="grid break-inside-avoid grid-cols-6 gap-1">
                         {row.map((m) => (
                             <div key={m.measure} className="border-l border-black pl-1">
-                                <div className="text-[10px] text-zinc-500">小節 {m.measure}</div>
+                                <div className="text-[8px] text-zinc-500">小節 {m.measure}</div>
                                 {/* コード */}
-                                <div className="h-4 text-sm font-bold text-black">{chords[m.measure] ?? ''}</div>
+                                <div className="h-3.5 text-xs font-bold text-black">{chords[m.measure] ?? ''}</div>
                                 {/* 歌詞（ギターの上） */}
-                                <div className="min-h-4 text-[11px] leading-tight text-black">{lyrics[m.measure] ?? ''}</div>
+                                <div className="min-h-3.5 text-[10px] leading-tight text-black">{lyrics[m.measure] ?? ''}</div>
                                 {/* ギター */}
-                                <div className="text-[9px] text-zinc-500">Gt</div>
+                                <div className="text-[8px] text-zinc-500">Gt</div>
                                 <MiniTab cells={guitarCells} measure={m.measure} beats={m.beats} unit={m.unit} instrument="guitar" light />
                                 {/* ベース */}
-                                <div className="text-[9px] text-zinc-500">Ba</div>
+                                <div className="text-[8px] text-zinc-500">Ba</div>
                                 <MiniTab cells={bassCells} measure={m.measure} beats={m.beats} unit={m.unit} instrument="bass" light />
                                 {/* ドラム */}
-                                <div className="text-[9px] text-zinc-500">Dr</div>
+                                <div className="text-[8px] text-zinc-500">Dr</div>
                                 <DrumStaff notes={m.notes} beats={m.beats} unit={m.unit} showHeader={false} />
                             </div>
                         ))}

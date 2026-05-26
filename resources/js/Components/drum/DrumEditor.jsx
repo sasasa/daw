@@ -13,8 +13,8 @@ function cloneNotes(notes) {
 
 export default function DrumEditor({ beatsPerMeasure, pattern, sections = [], playingMeasure = null, followEnabled = true, viewSectionId = '', onViewSectionChange, onChange, onPreview, onPlayMeasure }) {
     const [tool, setTool] = useState('8');
-    const [selected, setSelected] = useState(1);
-    const [checked, setChecked] = useState(() => new Set());
+    const [selected, setSelected] = useState(1); // 選択の起点（アンカー・貼り付け/プリセットの基準）
+    const [selectedSet, setSelectedSet] = useState(() => new Set([1])); // 複数選択中の小節
     const [clipboard, setClipboard] = useState(null); // { beats, unit, notes }[]
     const [genre, setGenre] = useState('rock');
     const [beatType, setBeatType] = useState('8');
@@ -31,9 +31,32 @@ export default function DrumEditor({ beatsPerMeasure, pattern, sections = [], pl
             return next;
         });
 
+    // 小節の選択。クリック=単独選択、Shift+クリック=アンカーからの範囲、Ctrl/⌘+クリック=トグル。
+    const selectMeasure = (measure, e) => {
+        if (e.shiftKey) {
+            const anchor = selected ?? measure;
+            const lo = Math.min(anchor, measure);
+            const hi = Math.max(anchor, measure);
+            const set = new Set();
+            for (let i = lo; i <= hi; i++) set.add(i);
+            setSelectedSet(set); // アンカー(selected)は維持
+        } else if (e.ctrlKey || e.metaKey) {
+            setSelectedSet((prev) => {
+                const next = new Set(prev);
+                next.has(measure) ? next.delete(measure) : next.add(measure);
+                return next;
+            });
+            setSelected(measure);
+        } else {
+            setSelected(measure);
+            setSelectedSet(new Set([measure]));
+        }
+    };
+
     // 小節クリック: その小節を選択し、譜面（カード）を隠さない位置にポップアップを開く。
     const openPad = (measure, e) => {
         setSelected(measure);
+        setSelectedSet(new Set([measure]));
         const rect = e.currentTarget.getBoundingClientRect();
         const W = 420;
         const H = 340;
@@ -82,7 +105,7 @@ export default function DrumEditor({ beatsPerMeasure, pattern, sections = [], pl
             setViewSectionId('');
         }
         const el = cardRefs.current[playingMeasure];
-        el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     }, [playingMeasure, followEnabled]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const editMeasure = (measure, updater) => {
@@ -138,18 +161,11 @@ export default function DrumEditor({ beatsPerMeasure, pattern, sections = [], pl
 
     const removeMeasure = (measure) => {
         if (pattern.length <= 1) return;
+        if (!confirm(`小節 ${measure} を削除しますか？`)) return;
         const next = pattern.filter((m) => m.measure !== measure).map((m, i) => ({ ...m, measure: i + 1 }));
         onChange(next);
         setSelected((s) => Math.min(s, next.length));
-        setChecked(new Set());
-    };
-
-    const toggleCheck = (measure) => {
-        setChecked((prev) => {
-            const next = new Set(prev);
-            next.has(measure) ? next.delete(measure) : next.add(measure);
-            return next;
-        });
+        setSelectedSet(new Set());
     };
 
     const measureToClip = (m) => ({ beats: m.beats, unit: m.unit, notes: m.notes.map((n) => ({ ...n })) });
@@ -157,14 +173,41 @@ export default function DrumEditor({ beatsPerMeasure, pattern, sections = [], pl
         const m = pattern.find((x) => x.measure === measure);
         if (m) setClipboard([measureToClip(m)]);
     };
-    const copyChecked = () => {
-        const clip = [...checked]
+    // 選択中の小節（複数可）をコピー。Ctrl+C から呼ぶ。
+    const copySelected = () => {
+        const clip = [...selectedSet]
             .sort((a, b) => a - b)
             .map((num) => pattern.find((m) => m.measure === num))
             .filter(Boolean)
             .map(measureToClip);
         if (clip.length) setClipboard(clip);
     };
+
+    // Ctrl+C / Ctrl+V で選択小節をコピー・貼り付け（ページ全体で待ち受け）。
+    // 入力欄やテキスト選択中は通常のコピペを優先する。
+    useEffect(() => {
+        const onKey = (e) => {
+            if (!(e.ctrlKey || e.metaKey)) return;
+            const key = e.key.toLowerCase();
+            if (key !== 'c' && key !== 'v') return;
+            const t = e.target;
+            const tag = t?.tagName;
+            if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t?.isContentEditable) return;
+            if (key === 'c') {
+                // テキストを選択中ならそのコピーを優先（小節コピーしない）。
+                if ((window.getSelection?.()?.toString() ?? '').length > 0) return;
+                if (selectedSet.size === 0) return;
+                e.preventDefault();
+                copySelected();
+            } else if (key === 'v') {
+                if (!clipboard?.length) return;
+                e.preventDefault();
+                pasteAt(selected);
+            }
+        };
+        document.addEventListener('keydown', onKey);
+        return () => document.removeEventListener('keydown', onKey);
+    }, [selectedSet, clipboard, selected, pattern]); // eslint-disable-line react-hooks/exhaustive-deps
     const pasteAt = (startMeasure) => {
         if (!clipboard?.length) return;
         let next = pattern.map((m) => ({ ...m, notes: [...m.notes] }));
@@ -211,9 +254,8 @@ export default function DrumEditor({ beatsPerMeasure, pattern, sections = [], pl
         const gIdx = pattern.findIndex((p) => p.measure === m.measure);
         const prev = pattern[gIdx - 1];
         const showHeader = gIdx === 0 || prev.beats !== m.beats || prev.unit !== m.unit;
-        const isSel = m.measure === selected;
+        const isSel = selectedSet.has(m.measure);
         const isPlaying = m.measure === playingMeasure;
-        const isChecked = checked.has(m.measure);
         const sec = sectionOfMeasure(sections, m.measure);
         const isSectionStart = sec && sec.start === m.measure;
         return (
@@ -235,19 +277,27 @@ export default function DrumEditor({ beatsPerMeasure, pattern, sections = [], pl
                     </div>
                 )}
                 <div className="mb-1 flex items-center justify-between">
-                    <label className="flex items-center gap-1 text-[11px] font-bold text-zinc-400">
-                        <input type="checkbox" checked={isChecked} onChange={() => toggleCheck(m.measure)} className="accent-green-500" />
+                    <button
+                        type="button"
+                        onClick={(e) => selectMeasure(m.measure, e)}
+                        className={`flex items-center gap-1 rounded px-1 text-[11px] font-bold ${isSel ? 'text-green-300' : 'text-zinc-400 hover:text-zinc-200'}`}
+                        title="クリックで選択 / Shift+クリックで範囲選択 / Ctrl+クリックで追加"
+                    >
                         小節 {m.measure}
                         <span className="text-zinc-500">({m.beats}/{m.unit})</span>
-                    </label>
+                    </button>
                     <div className="flex items-center gap-0.5 text-zinc-300">
                         <button onClick={() => onPlayMeasure?.(m.measure)} className={`${iconBtn} text-green-400`} title="この小節を再生">▶</button>
-                        <button onClick={() => copyMeasure(m.measure)} className={iconBtn} title="この小節をコピー">コピー</button>
-                        <button onClick={() => pasteAt(m.measure)} disabled={!clipboard} className={iconBtn} title="この小節を起点に貼付け">貼付</button>
                         <button onClick={() => removeMeasure(m.measure)} disabled={pattern.length <= 1} className={`${iconBtn} text-red-400`} title="削除">✕</button>
                     </div>
                 </div>
-                <button type="button" onClick={(e) => openPad(m.measure, e)} className="block w-full cursor-pointer">
+                <button
+                    type="button"
+                    onClick={(e) =>
+                        e.shiftKey || e.ctrlKey || e.metaKey ? selectMeasure(m.measure, e) : openPad(m.measure, e)
+                    }
+                    className="block w-full cursor-pointer"
+                >
                     <DrumStaff notes={m.notes} beats={m.beats} unit={m.unit} showHeader={showHeader} />
                 </button>
             </div>
@@ -258,6 +308,9 @@ export default function DrumEditor({ beatsPerMeasure, pattern, sections = [], pl
         <section className="rounded-lg bg-zinc-900 p-3">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                 <h2 className="text-sm font-bold tracking-wide text-zinc-300">DRUM TRACK</h2>
+                <button onClick={addMeasure} className="rounded bg-green-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-green-600">
+                    + 小節追加
+                </button>
             </div>
 
             {/* プリセット: ジャンル × ビート × 小節数。カーソル位置から上書き配置。 */}
@@ -292,18 +345,14 @@ export default function DrumEditor({ beatsPerMeasure, pattern, sections = [], pl
                 </button>
             </div>
 
-            {/* コピペ用ツールバー */}
-            <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-zinc-400">
-                <button onClick={copyChecked} disabled={checked.size === 0} className="rounded bg-zinc-800 px-2 py-1 hover:bg-zinc-700 disabled:opacity-40">
-                    選択した {checked.size} 小節をコピー
-                </button>
-                <button onClick={() => pasteAt(selected)} disabled={!clipboard} className="rounded bg-zinc-800 px-2 py-1 hover:bg-zinc-700 disabled:opacity-40">
-                    小節 {selected} から貼付け
-                </button>
-                {checked.size > 0 && (
-                    <button onClick={() => setChecked(new Set())} className="underline">選択解除</button>
-                )}
-                <span className="ml-auto">{clipCount > 0 ? `クリップボード: ${clipCount} 小節` : 'クリップボード: 空'}</span>
+            {/* コピペの操作ヒント（ボタンは廃止し、選択＋ Ctrl+C/Ctrl+V で操作） */}
+            <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px] text-zinc-500">
+                <span>小節番号をクリックで選択・Shift+クリックで範囲選択 →</span>
+                <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-zinc-300">Ctrl+C</span>
+                コピー
+                <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-zinc-300">Ctrl+V</span>
+                小節 {selected} から貼付け
+                <span className="ml-auto">選択 {selectedSet.size} ・ {clipCount > 0 ? `クリップボード ${clipCount} 小節` : 'クリップボード 空'}</span>
             </div>
 
             {/* セクション表示切替: 選ぶと譜面がそのセクションだけになる。 */}
@@ -377,10 +426,6 @@ export default function DrumEditor({ beatsPerMeasure, pattern, sections = [], pl
                     })()}
                 </div>
             )}
-
-            <button onClick={addMeasure} className="mt-2 rounded bg-zinc-800 px-4 py-1.5 text-sm hover:bg-zinc-700">
-                + 小節追加
-            </button>
 
             {/* 選択中の小節の打ち込みポップアップ（譜面を隠さない位置に表示） */}
             {selMeasure && padPos && (

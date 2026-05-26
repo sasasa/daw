@@ -254,7 +254,12 @@ export function useAudioEngine() {
                 bounds.push(bounds[bounds.length - 1] + measureDurationSeconds(beats, unit, bpmOf(m.measure)));
             });
             const total = bounds[bounds.length - 1];
-            const endAt = stopSeconds != null ? stopSeconds : total;
+            // 録音トラックの終端（offset+長さ）。最後の小節で切らず録音が鳴り終わるまで再生する。
+            const audioEnd = audioTracks.reduce(
+                (mx, t) => Math.max(mx, ((t.offset_ms || 0) + (t.duration_ms || 0)) / 1000),
+                0
+            );
+            const endAt = stopSeconds != null ? stopSeconds : Math.max(total, audioEnd);
             boundsRef.current = bounds;
 
             // メトロノームON: 開始位置の小節の拍子・BPMでカウントインを鳴らしてから再生開始。
@@ -282,7 +287,8 @@ export function useAudioEngine() {
                     return;
                 }
                 setCurrentSeconds(t);
-                let m = 1;
+                // ドラム終端より後（録音のみ鳴っている区間）は最後の小節を維持する。
+                let m = bounds.length - 1;
                 for (let i = 0; i < bounds.length - 1; i++) {
                     if (t >= bounds[i] && t < bounds[i + 1]) {
                         m = i + 1;
