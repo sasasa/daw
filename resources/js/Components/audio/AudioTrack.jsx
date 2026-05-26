@@ -11,10 +11,31 @@ export default function AudioTrack({ track, onChanged, playSec = null, playing =
     const [name, setName] = useState(track.name);
     const vocal = isVocal(name);
     const [previewing, setPreviewing] = useState(false);
+    const [previewSec, setPreviewSec] = useState(0); // 単体プレビューの再生位置(秒)
     const [showTab, setShowTab] = useState(!!track.notation);
     const audioRef = useRef(null);
+    const rafRef = useRef(null);
 
     useEffect(() => setName(track.name), [track.name]);
+
+    // 単体プレビュー中は <audio> の再生位置を追従して再生線を動かす。
+    useEffect(() => {
+        if (!previewing) {
+            if (rafRef.current) cancelAnimationFrame(rafRef.current);
+            rafRef.current = null;
+            return;
+        }
+        const tick = () => {
+            const el = audioRef.current;
+            if (el) setPreviewSec(el.currentTime);
+            rafRef.current = requestAnimationFrame(tick);
+        };
+        rafRef.current = requestAnimationFrame(tick);
+        return () => {
+            if (rafRef.current) cancelAnimationFrame(rafRef.current);
+            rafRef.current = null;
+        };
+    }, [previewing]);
 
     const saveName = async (value) => {
         const trimmed = (value ?? name).trim();
@@ -79,9 +100,16 @@ export default function AudioTrack({ track, onChanged, playSec = null, playing =
         ? pattern.filter((m) => m.measure >= range.start && m.measure <= range.end)
         : pattern;
 
-    const rel = (playing || paused) && playSec != null ? playSec - offSec : null;
-    const relSec = rel != null && rel >= 0 && rel <= durSec ? rel : null;
-    const playheadPct = relSec != null ? (relSec / durSec) * 100 : null;
+    // 再生線の位置(%)。単体プレビュー中はそのトラックの再生位置、
+    // 全体再生/一時停止中は曲全体の再生位置から算出する。
+    let playheadPct = null;
+    if (previewing) {
+        playheadPct = Math.min(100, Math.max(0, (previewSec / durSec) * 100));
+    } else {
+        const rel = (playing || paused) && playSec != null ? playSec - offSec : null;
+        const relSec = rel != null && rel >= 0 && rel <= durSec ? rel : null;
+        playheadPct = relSec != null ? (relSec / durSec) * 100 : null;
+    }
 
     return (
         <div className="border-b border-zinc-800 px-3 py-2">
