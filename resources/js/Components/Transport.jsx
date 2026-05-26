@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 
 // 再生・停止のトランスポート。画面左下に固定表示。メトロノーム(カウントイン)のON/OFFも切替。
-export default function Transport({ isPlaying, onPlay, onStop, isPaused, onPause, onResume, metronome, onToggleMetronome, swing, onSwingChange, swingRatio, onSwingRatioChange, onExport, onExportVideo, prepStatus, videoPrepStatus, followTarget, onFollowTargetChange }) {
+export default function Transport({ isPlaying, onPlay, onStop, isPaused, onPause, onResume, onHorizontal, metronome, onToggleMetronome, swing, onSwingChange, swingRatio, onSwingRatioChange, onExport, onExportVideo, prepStatus, videoPrepStatus, followTarget, onFollowTargetChange }) {
     const [format, setFormat] = useState('wav');
     const [exporting, setExporting] = useState(false);
     const [stage, setStage] = useState(null); // 'render' | 'encode' | 'analyze' | 'video' | 'audio'
@@ -108,6 +108,13 @@ export default function Transport({ isPlaying, onPlay, onStop, isPaused, onPause
                 className="rounded bg-zinc-700 px-4 py-1.5 text-sm font-semibold hover:bg-zinc-600 disabled:opacity-40"
             >
                 ■ 停止
+            </button>
+            <button
+                onClick={onHorizontal}
+                className="rounded bg-indigo-600 px-3 py-1.5 text-sm font-semibold hover:bg-indigo-500"
+                title="譜面を横スクロールしながら再生"
+            >
+                ⇄ 横再生
             </button>
             <button
                 onClick={onToggleMetronome}

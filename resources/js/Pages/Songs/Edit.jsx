@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Head } from '@inertiajs/react';
 import Header from '../../Components/Header';
 import Transport from '../../Components/Transport';
+import HorizontalScore from '../../Components/HorizontalScore';
 import SectionEditor from '../../Components/SectionEditor';
 import AudioTrackList from '../../Components/audio/AudioTrackList';
 import DrumEditor from '../../Components/drum/DrumEditor';
@@ -64,6 +65,7 @@ export default function Edit({ song, audioTracks: initialAudioTracks, drumTrack 
     };
     const [metronome, setMetronome] = useState(true);
     const [prepOverlayHidden, setPrepOverlayHidden] = useState(false); // 準備中オーバーレイをXで閉じたか
+    const [horizontalOpen, setHorizontalOpen] = useState(false); // 横再生ビュー
     const [saveState, setSaveState] = useState('saved'); // 'saved' | 'saving'
     const [followTarget, setFollowTarget] = useState('tab'); // 'drum' | 'tab'（既定は波形/録音）
     const [viewSectionId, setViewSectionId] = useState(''); // 表示セクション（ドラム/録音で共有）
@@ -234,6 +236,33 @@ export default function Edit({ song, audioTracks: initialAudioTracks, drumTrack 
                     </div>
                 </div>
             )}
+            <HorizontalScore
+                open={horizontalOpen}
+                onClose={() => {
+                    stop();
+                    setHorizontalOpen(false);
+                }}
+                title={meta.title}
+                pattern={pattern}
+                sections={sections}
+                chords={chords}
+                lyrics={lyrics}
+                audioTracks={audioTracks}
+                bpm={meta.bpm}
+                currentMeasure={currentMeasure}
+                currentSeconds={currentSeconds}
+                isPlaying={isPlaying}
+                isPaused={isPaused}
+                onPlay={() => handlePlay(0)}
+                onStop={stop}
+                onPause={pause}
+                onResume={resume}
+                onSeekMeasure={(measure) => {
+                    const start = measureStartSeconds(pattern, meta.bpm, measure, sections);
+                    if (isPaused) seek(start);
+                    else play({ ...mixParams, metronome: false, startSeconds: start });
+                }}
+            />
             <Header songId={song.id} meta={meta} onChange={setMeta} onTimeSignature={handleTimeSignature} saveState={saveState} />
             <Transport
                 isPlaying={isPlaying}
@@ -245,6 +274,11 @@ export default function Edit({ song, audioTracks: initialAudioTracks, drumTrack 
                 isPaused={isPaused}
                 onPause={pause}
                 onResume={resume}
+                onHorizontal={() => {
+                    setViewSectionId('');
+                    setHorizontalOpen(true);
+                    handlePlay(0);
+                }}
                 metronome={metronome}
                 onToggleMetronome={() => setMetronome((v) => !v)}
                 swing={swing}
