@@ -2,8 +2,11 @@ import React from 'react';
 import { Link, router } from '@inertiajs/react';
 
 // エディタ上部のヘッダー。曲名・BPM・拍子を編集する。値は自動保存される。
-export default function Header({ songId, meta, onChange, saveState }) {
+const BEAT_UNITS = [1, 2, 4, 8, 16];
+
+export default function Header({ songId, meta, onChange, onTimeSignature, saveState }) {
     const set = (key, value) => onChange({ ...meta, [key]: value });
+    const beatUnit = meta.beat_unit ?? 4;
 
     const destroy = () => {
         if (confirm(`「${meta.title}」を削除しますか？`)) {
@@ -34,14 +37,30 @@ export default function Header({ songId, meta, onChange, saveState }) {
             </label>
             <label className="flex items-center gap-2 text-sm text-zinc-400">
                 拍子
-                <input
-                    type="number"
-                    min="1"
-                    max="16"
-                    value={meta.beats_per_measure}
-                    onChange={(e) => set('beats_per_measure', Number(e.target.value))}
-                    className="w-16 rounded bg-zinc-800 px-2 py-1.5 text-zinc-100 outline-none"
-                />
+                <span className="flex items-center gap-1">
+                    <input
+                        type="number"
+                        min="1"
+                        max="16"
+                        value={meta.beats_per_measure}
+                        onChange={(e) =>
+                            onTimeSignature?.(Math.max(1, Math.min(16, Number(e.target.value) || 1)), beatUnit)
+                        }
+                        className="w-14 rounded bg-zinc-800 px-2 py-1.5 text-center text-zinc-100 outline-none"
+                        title="分子（1小節の拍数）"
+                    />
+                    <span className="text-zinc-500">/</span>
+                    <select
+                        value={beatUnit}
+                        onChange={(e) => onTimeSignature?.(meta.beats_per_measure, Number(e.target.value))}
+                        className="rounded bg-zinc-800 px-2 py-1.5 text-zinc-100 outline-none"
+                        title="分母（音価）"
+                    >
+                        {BEAT_UNITS.map((u) => (
+                            <option key={u} value={u}>{u}</option>
+                        ))}
+                    </select>
+                </span>
             </label>
             <span className="text-xs text-zinc-500">
                 {saveState === 'saving' ? '保存中…' : '自動保存済み'}

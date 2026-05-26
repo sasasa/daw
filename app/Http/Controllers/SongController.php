@@ -67,6 +67,7 @@ class SongController extends Controller
             'title' => ['sometimes', 'string', 'max:255'],
             'bpm' => ['sometimes', 'integer', 'min:20', 'max:300'],
             'beats_per_measure' => ['sometimes', 'integer', 'min:1', 'max:16'],
+            'beat_unit' => ['sometimes', 'integer', 'in:1,2,4,8,16'],
             'sections' => ['sometimes', 'array'],
             'sections.*.id' => ['required', 'string'],
             'sections.*.name' => ['required', 'string', 'max:60'],
@@ -80,7 +81,7 @@ class SongController extends Controller
         ]);
 
         $song->fill(\Illuminate\Support\Arr::only($validated, [
-            'title', 'bpm', 'beats_per_measure', 'sections', 'chords', 'swing', 'swing_ratio',
+            'title', 'bpm', 'beats_per_measure', 'beat_unit', 'sections', 'chords', 'swing', 'swing_ratio',
         ]))->save();
 
         if (array_key_exists('pattern', $validated)) {

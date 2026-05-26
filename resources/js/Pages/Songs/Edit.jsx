@@ -7,6 +7,7 @@ import AudioTrackList from '../../Components/audio/AudioTrackList';
 import DrumEditor from '../../Components/drum/DrumEditor';
 import { useAudioEngine } from '../../hooks/useAudioEngine';
 import { measureStartSeconds } from '../../lib/sections';
+import { sixteenthsPerBeat } from '../../constants/drumMap';
 import { exportSong, downloadUrl } from '../../lib/exportAudio';
 import { exportVideo } from '../../lib/exportVideo';
 import { useExportPrep } from '../../hooks/useExportPrep';
@@ -18,7 +19,7 @@ function initialPattern(drumTrack, song) {
     return base.map((m) => ({
         measure: m.measure,
         beats: m.beats ?? song.beats_per_measure ?? 4,
-        unit: m.unit ?? 4,
+        unit: m.unit ?? song.beat_unit ?? 4,
         notes: m.notes ?? [],
     }));
 }
@@ -42,7 +43,24 @@ export default function Edit({ song, audioTracks: initialAudioTracks, drumTrack 
         title: song.title,
         bpm: song.bpm,
         beats_per_measure: song.beats_per_measure,
+        beat_unit: song.beat_unit ?? 4,
     });
+
+    // 一番上の拍子（何分の何）を変更したら、全小節の拍子も合わせて書き換える（範囲外の音は除外）。
+    const handleTimeSignature = (beats, unit) => {
+        setMeta((m) => ({ ...m, beats_per_measure: beats, beat_unit: unit }));
+        const spb = sixteenthsPerBeat(unit);
+        setPattern((prev) =>
+            prev.map((mm) => ({
+                ...mm,
+                beats,
+                unit,
+                notes: (mm.notes ?? []).filter(
+                    (n) => n.beat >= 1 && n.beat <= beats && n.subdivision >= 0 && n.subdivision < spb
+                ),
+            }))
+        );
+    };
     const [metronome, setMetronome] = useState(true);
     const [prepOverlayHidden, setPrepOverlayHidden] = useState(false); // 準備中オーバーレイをXで閉じたか
     const [saveState, setSaveState] = useState('saved'); // 'saved' | 'saving'
@@ -65,6 +83,7 @@ export default function Edit({ song, audioTracks: initialAudioTracks, drumTrack 
                     title: meta.title,
                     bpm: meta.bpm,
                     beats_per_measure: meta.beats_per_measure,
+                    beat_unit: meta.beat_unit,
                     sections,
                     chords,
                     swing,
@@ -204,7 +223,7 @@ export default function Edit({ song, audioTracks: initialAudioTracks, drumTrack 
                     </div>
                 </div>
             )}
-            <Header songId={song.id} meta={meta} onChange={setMeta} saveState={saveState} />
+            <Header songId={song.id} meta={meta} onChange={setMeta} onTimeSignature={handleTimeSignature} saveState={saveState} />
             <Transport
                 isPlaying={isPlaying}
                 onPlay={() => {

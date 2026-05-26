@@ -15,6 +15,7 @@ class Song extends Model
         'title',
         'bpm',
         'beats_per_measure',
+        'beat_unit',
         'sections',
         'chords',
         'swing',
@@ -36,6 +37,7 @@ class Song extends Model
     protected $casts = [
         'bpm' => 'integer',
         'beats_per_measure' => 'integer',
+        'beat_unit' => 'integer',
         'sections' => 'array',
         'chords' => 'array',
         'swing_ratio' => 'integer',
