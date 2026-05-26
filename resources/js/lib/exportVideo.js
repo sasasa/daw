@@ -7,6 +7,32 @@ import { Muxer, ArrayBufferTarget } from 'mp4-muxer';
 import { renderMix, downloadBlob } from './exportAudio';
 import { analyzeForVideo } from './audioFFT';
 import { drawFrame, featAt } from './visualizer';
+import { measureDurationSeconds, measureBpm } from './sections';
+
+// 各動画フレームに表示する歌詞を、小節のタイミング（セクション別BPM/拍子）から割り出す。
+function buildLyricByFrame({ drumPattern = [], bpm = 120, beatsPerMeasure = 4, sections = [], lyrics = {}, frameCount, fps }) {
+    const bounds = [0];
+    const measureNums = [];
+    drumPattern.forEach((m) => {
+        const unit = m.unit || 4;
+        const beats = m.beats || beatsPerMeasure || 4;
+        measureNums.push(m.measure);
+        bounds.push(bounds[bounds.length - 1] + measureDurationSeconds(beats, unit, measureBpm(sections, bpm, m.measure)));
+    });
+    const out = new Array(frameCount).fill('');
+    const hasLyrics = lyrics && Object.keys(lyrics).length > 0;
+    if (!hasLyrics) return out;
+    for (let f = 0; f < frameCount; f++) {
+        const t = f / fps;
+        for (let i = 0; i < bounds.length - 1; i++) {
+            if (t >= bounds[i] && t < bounds[i + 1]) {
+                out[f] = lyrics[measureNums[i]] ?? '';
+                break;
+            }
+        }
+    }
+    return out;
+}
 
 export function webCodecsSupported() {
     return typeof window !== 'undefined' && 'VideoEncoder' in window && 'AudioEncoder' in window && 'AudioData' in window;
@@ -56,7 +82,7 @@ async function encodeAudio(muxer, buffer) {
 }
 
 // WebCodecs パス: フレーム描画 → H.264 エンコード → mux → MP4 Blob。
-async function renderMp4WebCodecs(buffer, analysis, { width, height, fps, onProgress }) {
+async function renderMp4WebCodecs(buffer, analysis, { width, height, fps, onProgress, lyricByFrame = [] }) {
     const muxer = new Muxer({
         target: new ArrayBufferTarget(),
         video: { codec: 'avc', width, height },
@@ -83,7 +109,7 @@ async function renderMp4WebCodecs(buffer, analysis, { width, height, fps, onProg
     const usPerFrame = 1e6 / fps;
 
     for (let f = 0; f < frameCount; f++) {
-        drawFrame(ctx, width, height, featAt(analysis, f), f, fps);
+        drawFrame(ctx, width, height, featAt(analysis, f), f, fps, lyricByFrame[f] || '');
         const frame = new VideoFrame(canvas, { timestamp: Math.round(f * usPerFrame), duration: Math.round(usPerFrame) });
         videoEncoder.encode(frame, { keyFrame: f % (fps * 2) === 0 });
         frame.close();
@@ -108,7 +134,7 @@ async function renderMp4WebCodecs(buffer, analysis, { width, height, fps, onProg
 }
 
 // フォールバック: MediaRecorder で実時間録画（WebM）。canvas を fps で captureStream。
-async function renderWebmRealtime(buffer, analysis, { width, height, fps, onProgress }) {
+async function renderWebmRealtime(buffer, analysis, { width, height, fps, onProgress, lyricByFrame = [] }) {
     const canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;
@@ -147,7 +173,7 @@ async function renderWebmRealtime(buffer, analysis, { width, height, fps, onProg
                 return;
             }
             const f = Math.floor(t * fps);
-            drawFrame(ctx, width, height, featAt(analysis, f), f, fps);
+            drawFrame(ctx, width, height, featAt(analysis, f), f, fps, lyricByFrame[f] || '');
             onProgress?.(Math.min(0.99, t / duration));
             requestAnimationFrame(tick);
         };
@@ -169,7 +195,7 @@ function safeName(name) {
 // 高レベル API: ミックス → 解析 → 動画生成 → ダウンロード。
 // onStage(stage, progress): stage='render'|'analyze'|'video'|'audio', progress は 0..1 か null。
 // 返り値: { format: 'mp4'|'webm', blob }
-export async function exportVideo(params, { filename = 'song', width = 1280, height = 720, fps = 30, onStage = null, buffer = null, analysis = null, download = true } = {}) {
+export async function exportVideo(params, { filename = 'song', width = 1280, height = 720, fps = 30, onStage = null, buffer = null, analysis = null, lyrics = {}, download = true } = {}) {
     if (!buffer) {
         onStage?.('render', null);
         buffer = await renderMix(params);
@@ -179,16 +205,26 @@ export async function exportVideo(params, { filename = 'song', width = 1280, hei
         analysis = analyzeForVideo(buffer, { fps });
     }
 
+    const lyricByFrame = buildLyricByFrame({
+        drumPattern: params.drumPattern,
+        bpm: params.bpm,
+        beatsPerMeasure: params.beatsPerMeasure,
+        sections: params.sections,
+        lyrics,
+        frameCount: analysis.frameCount,
+        fps,
+    });
+
     const base = safeName(filename);
     let format;
     let blob;
     if (webCodecsSupported()) {
         format = 'mp4';
-        blob = await renderMp4WebCodecs(buffer, analysis, { width, height, fps, onProgress: (p) => onStage?.('video', p) });
+        blob = await renderMp4WebCodecs(buffer, analysis, { width, height, fps, onProgress: (p) => onStage?.('video', p), lyricByFrame });
     } else {
         // フォールバック（実時間録画・WebM）
         format = 'webm';
-        blob = await renderWebmRealtime(buffer, analysis, { width, height, fps, onProgress: (p) => onStage?.('video', p) });
+        blob = await renderWebmRealtime(buffer, analysis, { width, height, fps, onProgress: (p) => onStage?.('video', p), lyricByFrame });
     }
     if (download) downloadBlob(blob, `${base}.${format}`);
     return { format, blob };

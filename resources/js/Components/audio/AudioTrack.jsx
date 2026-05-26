@@ -1,13 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Waveform from './Waveform';
 import TabEditor from './TabEditor';
+import LyricsEditor from './LyricsEditor';
 import api from '../../lib/api';
 import { nearestSection, sectionRanges } from '../../lib/sections';
-import { INSTRUMENTS, instrumentToTab } from '../../constants/instruments';
+import { INSTRUMENTS, instrumentToTab, isVocal } from '../../constants/instruments';
 
-// 1 本の録音トラック行。名前編集・単体再生・波形・タブ譜入力・削除を担う。
-export default function AudioTrack({ track, onChanged, playSec = null, playing = false, paused = false, onSeek, pattern = [], sections = [], bpm = 120, chords = {}, onChordsChange }) {
+// 1 本の録音トラック行。名前編集・単体再生・波形・タブ譜/歌詞入力・削除を担う。
+export default function AudioTrack({ track, onChanged, playSec = null, playing = false, paused = false, onSeek, pattern = [], sections = [], bpm = 120, chords = {}, onChordsChange, lyrics = {}, onLyricsChange }) {
     const [name, setName] = useState(track.name);
+    const vocal = isVocal(name);
     const [previewing, setPreviewing] = useState(false);
     const [showTab, setShowTab] = useState(!!track.notation);
     const audioRef = useRef(null);
@@ -100,7 +102,7 @@ export default function AudioTrack({ track, onChanged, playSec = null, playing =
                         onClick={() => setShowTab((v) => !v)}
                         className={`mt-1 rounded px-1.5 py-0.5 text-[10px] ${showTab ? 'bg-green-700 text-white' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}
                     >
-                        コード/タブ
+                        {vocal ? '歌詞' : 'コード/タブ'}
                     </button>
                 </div>
 
@@ -133,14 +135,22 @@ export default function AudioTrack({ track, onChanged, playSec = null, playing =
                         )}
                     </div>
                     {showTab && (
-                        <TabEditor
-                            notation={track.notation}
-                            onSave={saveNotation}
-                            measures={coveredMeasures}
-                            chords={chords}
-                            onChordsChange={onChordsChange}
-                            instrument={instrumentToTab(name)}
-                        />
+                        vocal ? (
+                            <LyricsEditor
+                                measures={coveredMeasures}
+                                lyrics={lyrics}
+                                onLyricsChange={onLyricsChange}
+                            />
+                        ) : (
+                            <TabEditor
+                                notation={track.notation}
+                                onSave={saveNotation}
+                                measures={coveredMeasures}
+                                chords={chords}
+                                onChordsChange={onChordsChange}
+                                instrument={instrumentToTab(name)}
+                            />
+                        )
                     )}
                 </div>
 

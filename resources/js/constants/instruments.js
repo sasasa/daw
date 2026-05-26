@@ -6,3 +6,8 @@ export function instrumentToTab(name) {
     if (name && name.includes('ベース')) return 'bass';
     return 'guitar'; // ギター・ボーカル・その他は6弦
 }
+
+// ボーカルトラックか（歌詞入力を出す）。
+export function isVocal(name) {
+    return !!name && name.includes('ボーカル');
+}

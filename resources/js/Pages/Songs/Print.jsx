@@ -33,6 +33,7 @@ function mergeCells(audioTracks, instrument) {
 export default function Print({ song, audioTracks, drumTrack }) {
     const pattern = initialPattern(drumTrack, song);
     const chords = song.chords ?? {};
+    const lyrics = song.lyrics ?? {};
     const guitarCells = mergeCells(audioTracks, 'guitar');
     const bassCells = mergeCells(audioTracks, 'bass');
     const PER_ROW = 4;
@@ -70,6 +71,8 @@ export default function Print({ song, audioTracks, drumTrack }) {
                                 <div className="text-[10px] text-zinc-500">小節 {m.measure}</div>
                                 {/* コード */}
                                 <div className="h-4 text-sm font-bold text-black">{chords[m.measure] ?? ''}</div>
+                                {/* 歌詞（ギターの上） */}
+                                <div className="min-h-4 text-[11px] leading-tight text-black">{lyrics[m.measure] ?? ''}</div>
                                 {/* ギター */}
                                 <div className="text-[9px] text-zinc-500">Gt</div>
                                 <MiniTab cells={guitarCells} measure={m.measure} beats={m.beats} unit={m.unit} instrument="guitar" light />

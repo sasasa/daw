@@ -161,7 +161,8 @@ function drawCat(ctx, cx, cy, size, feat, t) {
 // 1フレーム描画。
 // feat: { bars:Float32Array, rms, bass, mid, treble }
 // frameIndex / fps: 経過時間（色相・回転の進行に使う）
-export function drawFrame(ctx, width, height, feat, frameIndex, fps) {
+// lyric: その時刻に表示する歌詞（無ければ空文字）
+export function drawFrame(ctx, width, height, feat, frameIndex, fps, lyric = '') {
     const t = frameIndex / fps;
     const cx = width / 2;
     const cy = height / 2;
@@ -238,6 +239,29 @@ export function drawFrame(ctx, width, height, feat, frameIndex, fps) {
 
     // 音楽に合わせて踊る猫（幾何学の手前・中央）。
     drawCat(ctx, cx, cy + unit * 0.04, unit * 0.17, feat, t);
+
+    // 歌詞（下部中央）。読みやすいよう半透明の帯＋縁取りで描く。
+    if (lyric) {
+        let fontPx = Math.round(unit * 0.055);
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        // 横幅に収まるようフォントを縮める。
+        ctx.font = `bold ${fontPx}px sans-serif`;
+        const maxW = width * 0.9;
+        while (ctx.measureText(lyric).width > maxW && fontPx > 10) {
+            fontPx -= 1;
+            ctx.font = `bold ${fontPx}px sans-serif`;
+        }
+        const ly = height - unit * 0.1;
+        const tw = ctx.measureText(lyric).width;
+        ctx.fillStyle = 'rgba(0,0,0,0.45)';
+        ctx.fillRect(cx - tw / 2 - 16, ly - fontPx * 0.8, tw + 32, fontPx * 1.6);
+        ctx.lineWidth = Math.max(2, fontPx * 0.12);
+        ctx.strokeStyle = 'rgba(0,0,0,0.9)';
+        ctx.strokeText(lyric, cx, ly);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(lyric, cx, ly);
+    }
 }
 
 // frameIndex 用に特徴量を1フレームぶん取り出すヘルパ。

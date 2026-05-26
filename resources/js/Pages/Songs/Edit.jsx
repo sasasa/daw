@@ -37,6 +37,7 @@ export default function Edit({ song, audioTracks: initialAudioTracks, drumTrack 
     const [pattern, setPattern] = useState(() => initialPattern(drumTrack, song));
     const [sections, setSections] = useState(() => song.sections ?? []);
     const [chords, setChords] = useState(() => song.chords ?? {});
+    const [lyrics, setLyrics] = useState(() => song.lyrics ?? {});
     const [swing, setSwing] = useState(() => song.swing ?? '0');
     const [swingRatio, setSwingRatio] = useState(() => song.swing_ratio ?? 66);
     const [meta, setMeta] = useState({
@@ -86,6 +87,7 @@ export default function Edit({ song, audioTracks: initialAudioTracks, drumTrack 
                     beat_unit: meta.beat_unit,
                     sections,
                     chords,
+                    lyrics,
                     swing,
                     swing_ratio: swingRatio,
                     pattern,
@@ -94,7 +96,7 @@ export default function Edit({ song, audioTracks: initialAudioTracks, drumTrack 
                 .catch(() => setSaveState('saved'));
         }, 700);
         return () => clearTimeout(id);
-    }, [pattern, sections, chords, swing, swingRatio, meta, song.id]);
+    }, [pattern, sections, chords, lyrics, swing, swingRatio, meta, song.id]);
 
     // startSeconds〜stopSeconds を再生（省略時は曲頭〜最後）。
     const handlePlay = (startSeconds = 0, stopSeconds = null) => {
@@ -160,7 +162,7 @@ export default function Edit({ song, audioTracks: initialAudioTracks, drumTrack 
 
     // 編集が落ち着いたらミックスをバックグラウンドでレンダリングし、サーバーに保存しておく。
     // リロード時はサーバーキャッシュを取得するだけで済む。
-    const prep = useExportPrep(song.id, mixParams);
+    const prep = useExportPrep(song.id, mixParams, { lyrics });
 
     // 新しい準備が始まったらオーバーレイの非表示状態をリセット（次回は再表示）。
     useEffect(() => {
@@ -183,7 +185,7 @@ export default function Edit({ song, audioTracks: initialAudioTracks, drumTrack 
             return;
         }
         const buffer = await prep.getBuffer();
-        return exportVideo(mixParams, { filename: meta.title, onStage, buffer });
+        return exportVideo(mixParams, { filename: meta.title, onStage, buffer, lyrics });
     };
 
     // 録音用: カウントイン後にドラム＋既存の多重録音トラックを鳴らし、開始点で onStart を発火。
@@ -269,6 +271,8 @@ export default function Edit({ song, audioTracks: initialAudioTracks, drumTrack 
                     sections={sections}
                     chords={chords}
                     onChordsChange={setChords}
+                    lyrics={lyrics}
+                    onLyricsChange={setLyrics}
                     onRecordPlay={recordPlay}
                     onStopPlay={stop}
                     onGetLatency={getLatencySeconds}

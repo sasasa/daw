@@ -4,7 +4,7 @@ import { exportVideo } from '../lib/exportVideo';
 import api from '../lib/api';
 
 // ビジュアライザーの実装バージョン。描画を変えたら上げると動画キャッシュが無効になる。
-const VIZ_VERSION = 'v1';
+const VIZ_VERSION = 'v2'; // v2: 歌詞オーバーレイ追加
 
 // ミックスパラメータの署名（SHA-256 hex）。サーバーキャッシュの一致判定に使う。
 async function sha256(str) {
@@ -32,7 +32,10 @@ async function fetchDecode(url) {
 //  - videoStatus: 動画準備の状態（同上）
 //  - getBuffer(): 現在の署名に対応する AudioBuffer（必要なら遅延デコード）。無ければ null。
 //  - getVideo(): 現在の署名に対応するキャッシュ動画 { url, format }。無ければ null。
-export function useExportPrep(songId, params, { debounceMs = 2500, videoDebounceMs = 1500 } = {}) {
+export function useExportPrep(songId, params, { lyrics = {}, debounceMs = 2500, videoDebounceMs = 1500 } = {}) {
+    const lyricsSig = useMemo(() => JSON.stringify(lyrics ?? {}), [lyrics]);
+    const lyricsRef = useRef(lyrics);
+    lyricsRef.current = lyrics;
     const sig = useMemo(() => JSON.stringify(params), [params]);
     const sigRef = useRef(sig);
     sigRef.current = sig;
@@ -148,7 +151,7 @@ export function useExportPrep(songId, params, { debounceMs = 2500, videoDebounce
         (async () => {
             let vsig;
             try {
-                vsig = await sha256(sig + VIZ_VERSION);
+                vsig = await sha256(sig + '|' + lyricsSig + '|' + VIZ_VERSION);
             } catch (_) {
                 return;
             }
@@ -184,7 +187,7 @@ export function useExportPrep(songId, params, { debounceMs = 2500, videoDebounce
                         if (!cancelled()) setVideoStatus('idle');
                         return;
                     }
-                    const { blob, format } = await exportVideo(params, { buffer, download: false });
+                    const { blob, format } = await exportVideo(params, { buffer, lyrics: lyricsRef.current, download: false });
                     if (cancelled()) return;
                     const fd = new FormData();
                     fd.append('signature', vsig);
@@ -207,14 +210,14 @@ export function useExportPrep(songId, params, { debounceMs = 2500, videoDebounce
                 videoTimerRef.current = null;
             }
         };
-    }, [status, sig, songId, videoDebounceMs, ensureBuffer]);
+    }, [status, sig, lyricsSig, songId, videoDebounceMs, ensureBuffer]);
 
     const getBuffer = useCallback(() => ensureBuffer(), [ensureBuffer]);
 
     const getVideo = useCallback(async () => {
         let vsig;
         try {
-            vsig = await sha256(sigRef.current + VIZ_VERSION);
+            vsig = await sha256(sigRef.current + '|' + JSON.stringify(lyricsRef.current ?? {}) + '|' + VIZ_VERSION);
         } catch (_) {
             return null;
         }

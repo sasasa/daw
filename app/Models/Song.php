@@ -18,6 +18,7 @@ class Song extends Model
         'beat_unit',
         'sections',
         'chords',
+        'lyrics',
         'swing',
         'swing_ratio',
         'export_signature',
@@ -40,6 +41,7 @@ class Song extends Model
         'beat_unit' => 'integer',
         'sections' => 'array',
         'chords' => 'array',
+        'lyrics' => 'array',
         'swing_ratio' => 'integer',
     ];
 

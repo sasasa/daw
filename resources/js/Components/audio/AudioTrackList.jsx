@@ -21,7 +21,7 @@ function formatSec(sec) {
 // 録音トラック一覧 + 多チャンネル録音。
 // 入力デバイス（チャンネル）とチャンネル名、開始セクションを選んで録音する。
 // 録音は選んだセクションの開始時刻に offset_ms を合わせて配置する。
-export default function AudioTrackList({ song, audioTracks, bpm, pattern, sections, chords, onChordsChange, onRecordPlay, onStopPlay, onGetLatency, onAudioChanged, onAudioAdded, onRecordingStateChange, playSec, playing, paused, onSeek, followTarget, onFollowTargetChange, viewSectionId = '', onViewSectionChange }) {
+export default function AudioTrackList({ song, audioTracks, bpm, pattern, sections, chords, onChordsChange, lyrics, onLyricsChange, onRecordPlay, onStopPlay, onGetLatency, onAudioChanged, onAudioAdded, onRecordingStateChange, playSec, playing, paused, onSeek, followTarget, onFollowTargetChange, viewSectionId = '', onViewSectionChange }) {
     const { isRecording, elapsedMs, prepare, begin, stop } = useRecorder();
     const [uploading, setUploading] = useState(false);
     const [counting, setCounting] = useState(false);
@@ -285,6 +285,8 @@ export default function AudioTrackList({ song, audioTracks, bpm, pattern, sectio
                             bpm={bpm}
                             chords={chords}
                             onChordsChange={onChordsChange}
+                            lyrics={lyrics}
+                            onLyricsChange={onLyricsChange}
                         />
                     ))
                 ))}
@@ -318,6 +320,8 @@ export default function AudioTrackList({ song, audioTracks, bpm, pattern, sectio
                                         bpm={bpm}
                                         chords={chords}
                                         onChordsChange={onChordsChange}
+                                        lyrics={lyrics}
+                                        onLyricsChange={onLyricsChange}
                                     />
                                 ))}
                         </div>
