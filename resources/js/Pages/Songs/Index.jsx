@@ -1,9 +1,28 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Head, Link, router, useForm } from '@inertiajs/react';
 
 // 曲一覧 + 新規作成。クリックでエディタ(GET /songs/{id}/edit)へ遷移する。
 export default function Index({ songs }) {
     const [creating, setCreating] = useState(false);
+    const [importing, setImporting] = useState(false);
+    const fileRef = useRef(null);
+
+    // プロジェクト(zip)を読み込んで新しい曲として復元する。
+    const importProject = (e) => {
+        const file = e.target.files?.[0];
+        e.target.value = ''; // 同じファイルを連続選択できるようにリセット
+        if (!file) return;
+        setImporting(true);
+        router.post(
+            route('songs.import'),
+            { file },
+            {
+                forceFormData: true,
+                onError: (errs) => alert(`読み込みに失敗しました: ${errs.file ?? '不明なエラー'}`),
+                onFinish: () => setImporting(false),
+            }
+        );
+    };
     const { data, setData, post, processing, reset, errors } = useForm({
         title: '',
         bpm: 120,
@@ -32,12 +51,29 @@ export default function Index({ songs }) {
             <div className="mx-auto max-w-3xl px-4 py-10">
                 <div className="mb-6 flex items-center justify-between">
                     <h1 className="text-2xl font-bold">My Songs</h1>
-                    <button
-                        onClick={() => setCreating((v) => !v)}
-                        className="rounded bg-green-600 px-4 py-2 text-sm font-semibold hover:bg-green-500"
-                    >
-                        + 新規作成
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <input
+                            ref={fileRef}
+                            type="file"
+                            accept=".zip,application/zip"
+                            onChange={importProject}
+                            className="hidden"
+                        />
+                        <button
+                            onClick={() => fileRef.current?.click()}
+                            disabled={importing}
+                            className="rounded bg-zinc-700 px-4 py-2 text-sm font-semibold hover:bg-zinc-600 disabled:opacity-50"
+                            title="書き出したプロジェクト(zip)を読み込む"
+                        >
+                            {importing ? '読み込み中…' : '⬆ プロジェクト読込'}
+                        </button>
+                        <button
+                            onClick={() => setCreating((v) => !v)}
+                            className="rounded bg-green-600 px-4 py-2 text-sm font-semibold hover:bg-green-500"
+                        >
+                            + 新規作成
+                        </button>
+                    </div>
                 </div>
 
                 {creating && (
@@ -95,9 +131,16 @@ export default function Index({ songs }) {
                                 {song.title}
                                 <span className="ml-3 text-sm text-zinc-500">BPM {song.bpm}</span>
                             </Link>
+                            <a
+                                href={route('songs.export', song.id)}
+                                className="ml-4 rounded px-2 py-1 text-sm text-zinc-300 hover:bg-zinc-700"
+                                title="プロジェクト(zip)を書き出す"
+                            >
+                                ⬇ 書き出し
+                            </a>
                             <button
                                 onClick={() => destroy(song)}
-                                className="ml-4 rounded px-2 py-1 text-sm text-red-400 hover:bg-zinc-700"
+                                className="ml-2 rounded px-2 py-1 text-sm text-red-400 hover:bg-zinc-700"
                             >
                                 削除
                             </button>

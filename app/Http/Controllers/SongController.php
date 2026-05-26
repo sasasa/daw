@@ -36,6 +36,122 @@ class SongController extends Controller
         ]);
     }
 
+    // プロジェクト書き出し: 曲・ドラム・録音（音声ファイル含む）を 1 つの zip にまとめてダウンロード。
+    // 別PCでこの zip を読み込めば同じ状態を再現できる。
+    public function exportProject(Song $song)
+    {
+        $song->load(['drumTrack', 'audioTracks']);
+        $disk = Storage::disk('local');
+
+        $manifest = [
+            'format' => 'daw-project',
+            'version' => 1,
+            'song' => [
+                'title' => $song->title,
+                'bpm' => $song->bpm,
+                'beats_per_measure' => $song->beats_per_measure,
+                'beat_unit' => $song->beat_unit,
+                'sections' => $song->sections,
+                'chords' => $song->chords,
+                'lyrics' => $song->lyrics,
+                'swing' => $song->swing,
+                'swing_ratio' => $song->swing_ratio,
+            ],
+            'drum' => ['pattern' => $song->drumTrack?->pattern],
+            'audioTracks' => [],
+        ];
+
+        $tmp = tempnam(sys_get_temp_dir(), 'daw');
+        $zip = new \ZipArchive();
+        $zip->open($tmp, \ZipArchive::OVERWRITE);
+
+        foreach ($song->audioTracks as $i => $t) {
+            $inZip = null;
+            if ($t->file_path && $disk->exists($t->file_path)) {
+                $ext = pathinfo($t->file_path, PATHINFO_EXTENSION) ?: 'webm';
+                $inZip = "audio/{$i}.{$ext}";
+                $zip->addFile($disk->path($t->file_path), $inZip);
+            }
+            $manifest['audioTracks'][] = [
+                'name' => $t->name,
+                'mime_type' => $t->mime_type,
+                'duration_ms' => $t->duration_ms,
+                'offset_ms' => $t->offset_ms,
+                'notation' => $t->notation,
+                'file' => $inZip,
+            ];
+        }
+
+        $zip->addFromString('manifest.json', json_encode($manifest, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+        $zip->close();
+
+        $name = $this->safeFilename($song->title).'.daw.zip';
+
+        return response()->download($tmp, $name, ['Content-Type' => 'application/zip'])->deleteFileAfterSend(true);
+    }
+
+    // プロジェクト読み込み: 書き出した zip から曲・ドラム・録音を復元して新しい曲として作成する。
+    public function importProject(\Illuminate\Http\Request $request): RedirectResponse
+    {
+        $request->validate([
+            'file' => ['required', 'file', 'max:512000'], // 最大500MB
+        ]);
+
+        $zip = new \ZipArchive();
+        if ($zip->open($request->file('file')->getRealPath()) !== true) {
+            return back()->withErrors(['file' => 'ZIP を開けませんでした。']);
+        }
+
+        $raw = $zip->getFromName('manifest.json');
+        $data = $raw !== false ? json_decode($raw, true) : null;
+        if (! is_array($data) || ($data['format'] ?? null) !== 'daw-project') {
+            $zip->close();
+
+            return back()->withErrors(['file' => 'DAW プロジェクトファイルではありません。']);
+        }
+
+        $s = $data['song'] ?? [];
+        $song = Song::create([
+            'title' => ($s['title'] ?? '無題').' (読み込み)',
+            'bpm' => $s['bpm'] ?? 120,
+            'beats_per_measure' => $s['beats_per_measure'] ?? 4,
+            'beat_unit' => $s['beat_unit'] ?? 4,
+            'sections' => $s['sections'] ?? [],
+            'chords' => $s['chords'] ?? [],
+            'lyrics' => $s['lyrics'] ?? [],
+            'swing' => $s['swing'] ?? '0',
+            'swing_ratio' => $s['swing_ratio'] ?? 66,
+        ]);
+
+        if (! empty($data['drum']['pattern'])) {
+            $song->drumTrack()->create(['pattern' => $data['drum']['pattern']]);
+        }
+
+        $disk = Storage::disk('local');
+        foreach ($data['audioTracks'] ?? [] as $t) {
+            $path = '';
+            if (! empty($t['file'])) {
+                $bytes = $zip->getFromName($t['file']);
+                if ($bytes !== false) {
+                    $ext = pathinfo($t['file'], PATHINFO_EXTENSION) ?: 'webm';
+                    $path = 'audio/'.\Illuminate\Support\Str::uuid().'.'.$ext;
+                    $disk->put($path, $bytes);
+                }
+            }
+            $song->audioTracks()->create([
+                'name' => $t['name'] ?? 'Track',
+                'file_path' => $path,
+                'mime_type' => $t['mime_type'] ?? 'audio/webm',
+                'duration_ms' => $t['duration_ms'] ?? 0,
+                'offset_ms' => $t['offset_ms'] ?? 0,
+                'notation' => $t['notation'] ?? null,
+            ]);
+        }
+        $zip->close();
+
+        return to_route('songs.edit', $song);
+    }
+
     // 印刷用のバンド譜面（ドラム譜＋タブ譜）ページ。
     public function print(Song $song): Response
     {

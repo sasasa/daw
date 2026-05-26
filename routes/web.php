@@ -9,6 +9,10 @@ use Illuminate\Support\Facades\Route;
 Route::get('/', [SongController::class, 'index'])->name('songs.index');
 Route::post('/songs', [SongController::class, 'store'])->name('songs.store');
 
+// プロジェクト書き出し / 読み込み（別PCで同じ状態を再現）
+Route::get('/songs/{song}/export', [SongController::class, 'exportProject'])->name('songs.export');
+Route::post('/songs/import', [SongController::class, 'importProject'])->name('songs.import');
+
 // メインエディター
 Route::get('/songs/{song}/edit', [SongController::class, 'edit'])->name('songs.edit');
 Route::get('/songs/{song}/print', [SongController::class, 'print'])->name('songs.print');
